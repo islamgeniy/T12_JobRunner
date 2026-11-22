@@ -1,86 +1,165 @@
 # SOC 3010 Operating Systems — Term Project
 
-**Team:** T-12
-**Course:** SOC 3010 Operating Systems, Inha University in Tashkent, Fall 2026
-**Team leader:** Islam
+- **Команда (Team):** T-12
+- **Курс:** SOC 3010 Operating Systems, Inha University in Tashkent, Fall 2026
+- **Лидер команды (Team leader):** Islam
 
-A small **job runner** written in C for Ubuntu Linux. A *job* is a shell command that a client wants
-executed on another machine. Three programs cooperate:
+## Что мы делаем
 
-| Program  | Role |
-|----------|------|
-| `client` | Submits a job, asks for its status, cancels it, or fetches its output. One request, one answer, exit. |
-| `server` | One long-running process. Accepts clients, keeps the job queue, picks the next job (scheduling policy) and sends it to a free worker. Keeps a journal (`jobs.log`) so no accepted job is lost after a crash. |
-| `worker` | Runs on another machine. Connects to the server, receives jobs, runs each one with `fork` + `exec("/bin/sh", "-c", cmd)`, captures its output, enforces its timeout and reports the exit status. |
+Небольшой **job runner** («запускалка задач») на C для Ubuntu Linux. Задача (job) — это shell-команда, которую клиент хочет выполнить на другом компьютере. Систему составляют три программы:
 
-Job ids issued by our server start with our team number: `T<TEAM_NUMBER>-1`, `T<TEAM_NUMBER>-2`, …
+| Программа | Что делает |
+|-----------|------------|
+| `client` | Отправляет задачу, спрашивает её статус, отменяет её или забирает её вывод. Один запрос, один ответ, выход. |
+| `server` | Работает постоянно. Принимает клиентов, держит очередь задач, выбирает следующую задачу и отдаёт её свободному worker. Ведёт журнал `jobs.log`, поэтому после падения ни одна задача не теряется. |
+| `worker` | Работает на другой машине. Подключается к серверу, получает задачу, запускает её через `fork` + `exec("/bin/sh", "-c", cmd)`, собирает вывод, следит за таймаутом и сообщает результат. |
 
-## Components and owners
+Id задач начинаются с номера команды: `T<TEAM_NUMBER>-1`, `T<TEAM_NUMBER>-2`, …
 
-Anyone may touch any code, but the **owner** is the person who explains and changes that component live at the fair.
+## Кто за что отвечает
 
-| # | Component | Owner | Branch |
-|---|-----------|-------|--------|
-| 1 | Protocol and client | Mirakbar | `protocol-client` |
-| 2 | Scheduler and policy | Abdulloh | `scheduler` |
-| 3 | Worker and limits | Islam | `worker` |
-| 4 | Durability and recovery | Amir | `durability` |
-| 5 | Operations and report | Bulat | `ops-report` |
-| 6 | Testing and load | Jamoliddin | `testing` |
+Владелец (owner) — человек, который на защите объясняет свой компонент и меняет его код вживую. Смотреть и предлагать правки может любой, но **чужие файлы меняем только после договорённости с владельцем**.
 
-What each owner delivers:
+| # | Component | Owner | Ветка | Файлы |
+|---|-----------|-------|-------|-------|
+| 1 | Protocol and client | Islam | `protocol-client` | `src/protocol.h`, `src/protocol.c`, `src/client.c`, `docs/protocol.md` |
+| 2 | Scheduler and policy | Amir | `scheduler` | `src/scheduler.h`, `src/scheduler.c`, `src/server.c` |
+| 3 | Worker and limits | Mirakbar | `worker` | `src/worker.c` |
+| 4 | Durability and recovery | Abdulloh | `durability` | `src/jobs.h`, `src/jobs.c` |
+| 5 | Operations and report | Jamoliddin | `ops-report` | `Makefile`, `README.md`, `.gitignore`, `report.pdf` |
+| 6 | Testing and load | Bulat | `testing` | `tests/*.sh` |
 
-1. **Protocol and client** — the wire format (message names, fields, framing, error replies) and the `client` program.
-2. **Scheduler and policy** — the job queue, the scheduling policy (FIFO first, then one more policy), the dispatch decision, and a trace that proves the policy works.
-3. **Worker and limits** — the `worker`: `fork`, `exec`, `wait`, output capture through a pipe, the timeout kill of the whole process group, honest exit status, no zombies.
-4. **Durability and recovery** — the job table and its states, `cancel`, handling a worker that leaves, and the journal (`jobs.log`) with replay at restart.
-5. **Operations and report** — the `Makefile`, the repository and its history, `report.pdf`.
-6. **Testing and load** — the 8-clients-at-once script, a self-check script that runs rows 1–13 unattended, the zombie and file-descriptor checks.
+Что именно делает каждый:
 
-## Build
+1. **Islam — протокол и клиент.** Формат сообщений между программами (названия, поля, ответы с ошибками) и функции отправки и чтения строк (`send_line`, `recv_line`), которыми пользуются все. Отдельно — как заканчивается ответ на `fetch`. Плюс программа `client`. **Первым делом пишет `docs/protocol.md`**: от него зависят все остальные.
+2. **Amir — планировщик.** Главный цикл сервера (`accept`, обслуживание 8 клиентов одновременно), очередь задач, учёт свободных слотов у worker. Политика: сначала FIFO, потом вторая (например, priority with aging). Trace (лог реального запуска), который доказывает, что политика работает.
+3. **Mirakbar — worker.** `fork`, `exec`, pipe для вывода, таймаут (убить всю группу процессов), причина смерти задачи (`KILLED TIMEOUT` / `CANCELLED` / `KILLED SIGNAL n`), отсутствие zombie-процессов, корректный выход по `SIGTERM`.
+4. **Abdulloh — надёжность.** Таблица задач и их состояния, одна функция `set_state()` для любой смены состояния, `cancel`, обработка ухода worker. Part 2: журнал `jobs.log` (через данный нам `journal.h`) и восстановление таблицы при рестарте; вывод задач в `out/`.
+5. **Jamoliddin — сборка и отчёт.** `Makefile` (команда `make` собирает всё на чистой Ubuntu), порядок в репозитории, `report.pdf` (до 4 страниц, 6 разделов).
+6. **Bulat — тесты.** Скрипт «8 клиентов одновременно», скрипт, который сам прогоняет тесты 1–13, проверки на zombie-процессы и утечки file descriptors.
 
-On a fresh Ubuntu 22.04 / 24.04 with `build-essential`:
+## Структура репозитория
+
+```
+Makefile                      Jamoliddin
+README.md                     Jamoliddin (лидер правит таблицу владельцев)
+.gitignore                    Jamoliddin
+.gitmessage                   шаблон сообщения коммита
+.github/
+  pull_request_template.md    шаблон Pull Request
+docs/
+  protocol.md                 Islam
+src/
+  net.h                       дан преподавателем, НЕ МЕНЯТЬ
+  journal.h                   дан преподавателем, НЕ МЕНЯТЬ
+  protocol.h / protocol.c     Islam
+  client.c                    Islam
+  server.c                    Amir
+  scheduler.h / scheduler.c   Amir
+  jobs.h / jobs.c             Abdulloh
+  worker.c                    Mirakbar
+tests/                        Bulat
+report.pdf                    Jamoliddin (в конце)
+```
+
+В репозиторий **не попадают**: `server`, `worker`, `client` (собранные программы), `jobs.log`, `out/`. Это уже прописано в `.gitignore`.
+
+## Ветки и правила
+
+- **`main`** — только проверенный код. **Напрямую в `main` не пушит никто**, включая лидера.
+- У каждого своя ветка (см. таблицу), работаешь только в ней.
+- Готовый кусок попадает в `main` только через **Pull Request** (PR, запрос на слияние ветки). Лидер проверяет его и тестирует вместе ещё с одним участником на двух машинах.
+- Коммитим **часто и маленькими кусками**. История git показывает, что работа шла неделями, а не за ночь перед дедлайном.
+- PR делаем небольшими, раз в несколько дней, а не одним огромным в конце.
+- Слияние PR — только кнопкой **Create a merge commit**. Squash не используем, чтобы сохранить историю.
+
+## Как начать (один раз)
 
 ```sh
-make          # produces ./server ./worker ./client in the repository root
-make clean    # removes them
+git clone https://github.com/islamgeniy/<repo>.git
+cd <repo>
+git switch <моя-ветка>                     # например: git switch worker
+git config commit.template .gitmessage     # включить шаблон коммита
+git config pull.rebase false
 ```
 
-## Run
+Если `git push` просит пароль: GitHub не принимает обычный пароль. Выполни `gh auth login` (GitHub CLI) или создай Personal Access Token в Settings → Developer settings.
+
+## Каждый день
 
 ```sh
-./server <port>                          # e.g. ./server 5000
-./worker <server-host> <server-port> [K] # K = max parallel jobs, default 1
-./client <server-host> <server-port> <verb> ...
+git switch <моя-ветка>
+git pull                           # забрать последние изменения своей ветки
+# ... пишем код ...
+git status                         # что изменилось
+git add src/worker.c               # добавляем конкретные файлы, а не всё подряд
+git commit                         # откроется шаблон, заполняем его
+git push
 ```
 
-Client verbs:
+## Забрать новое из `main` в свою ветку
 
-| Command | Prints (first line of stdout) | Exit code |
-|---------|-------------------------------|-----------|
-| `submit "<command>" <timeout> [priority]` | the new job id, e.g. `T<TEAM_NUMBER>-7` | 0 |
-| `status <id>` | `<id> QUEUED` · `RUNNING` · `DONE <code>` · `KILLED TIMEOUT` · `KILLED SIGNAL <n>` · `CANCELLED` | 0 |
-| `cancel <id>` | `<id> CANCELLED` or `<id> ALREADY FINISHED` | 0 · 1 |
-| `fetch <id>` | the job's output, byte for byte (if not finished: `<id> NOT FINISHED` on stderr) | 0 · 1 |
-| any verb, unknown id | `<id> UNKNOWN` | 2 |
+Когда лидер слил что-то в `main` (например, протокол), каждый подтягивает это к себе:
 
-If the server cannot be reached, the client prints `client: cannot connect to <host>:<port>` to stderr and exits with 3.
-
-## Repository layout
-
-```
-Makefile
-README.md
-report.pdf        # added at the end
-src/              # server.c, worker.c, client.c, shared headers,
-                  # net.h and journal.h (given files, unchanged)
-tests/            # test and load scripts
+```sh
+git fetch origin
+git merge origin/main
+git push
 ```
 
-`jobs.log`, `out/` and the built executables are not committed (see `.gitignore`).
+Если git сообщил о конфликте (conflict, обе стороны правили одно место): открой файл в VSCodium, выбери правильный вариант, затем выполни `git add <файл>` и `git commit`. Не получается разобраться — пиши владельцу файла.
 
-## Branch workflow
+## Как сделать Pull Request
 
-- `main` holds only reviewed and tested code. Nobody pushes to `main` directly.
-- Each owner works on their own branch (see the table above) and opens a pull request when a piece works.
-- The team leader reviews each pull request, tests it on two machines with another member, and only then merges it into `main`.
+1. Запушь свою ветку (`git push`).
+2. На GitHub: вкладка **Pull requests** → **New pull request** → base: `main`, compare: твоя ветка.
+3. Описание заполнится шаблоном. Заполни все пункты.
+4. Reviewer — лидер (Islam). Для PR ветки `protocol-client` (ветка самого лидера) reviewer — любой другой участник.
+5. Исправляешь замечания новыми коммитами в той же ветке. PR обновится сам.
+
+## Сборка и запуск
+
+Проверяем на Ubuntu 22.04 / 24.04 (можно в VM) с пакетом `build-essential`:
+
+```sh
+make                                      # собирает ./server ./worker ./client
+make clean                                # удаляет их
+
+./server 5000                             # сервер на порту 5000
+./worker <ip-сервера> 5000 [K]            # K = сколько задач одновременно, по умолчанию 1
+./client <ip-сервера> 5000 <команда> ...
+```
+
+## Команды клиента (вывод должен совпадать до символа)
+
+| Команда | Первая строка вывода | Код выхода |
+|---------|----------------------|------------|
+| `submit "<команда>" <таймаут> [приоритет]` | id задачи, например `T<TEAM_NUMBER>-7` | 0 |
+| `status <id>` | `<id> QUEUED` · `RUNNING` · `DONE <код>` · `KILLED TIMEOUT` · `KILLED SIGNAL <n>` · `CANCELLED` | 0 |
+| `cancel <id>` | `<id> CANCELLED` или `<id> ALREADY FINISHED` | 0 · 1 |
+| `fetch <id>` | вывод задачи байт в байт (если не готова: `<id> NOT FINISHED` в stderr) | 0 · 1 |
+| любая команда с неизвестным id | `<id> UNKNOWN` | 2 |
+
+Сервер недоступен: `client: cannot connect to <host>:<port>` в stderr, код выхода 3.
+
+## Сроки
+
+| Дата | Что |
+|------|-----|
+| до 29 ноября | `docs/protocol.md` в `main`; client ↔ server общаются; worker запускает `echo hello` |
+| до 6 декабря | полный цикл submit → worker → status/fetch, таймаут, cancel; тесты 1–9 |
+| до 13 декабря | zombie, утечки fd, SIGTERM, журнал (тест 13), вторая политика; запуск на 2 машинах |
+| 14–18 декабря | только отчёт и финальная проверка (параллельно финальные экзамены); бронь слота защиты |
+| **18 декабря, 23:59** | **загрузка на eClass**: ссылка на репозиторий + ZIP + `report.pdf`. Опоздание не принимается |
+| 21–25 декабря | защита онлайн, все с **включённой камерой** |
+
+## Шпаргалка git
+
+| Команда | Что делает |
+|---------|------------|
+| `git status` | что изменено и на какой ты ветке |
+| `git log --oneline --graph --all` | дерево коммитов всех веток |
+| `git switch <ветка>` | перейти на ветку |
+| `git diff` | изменения, которые ещё не добавлены через `add` |
+| `git restore <файл>` | отменить незакоммиченные правки в файле (необратимо) |
+| `git stash` / `git stash pop` | временно убрать правки / вернуть их |
