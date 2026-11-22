@@ -1,0 +1,14 @@
+
+# <компонент>: <что сделано, коротко, до 60 символов>
+#
+# Компоненты: protocol | client | scheduler | server | worker | durability | ops | tests | docs
+# Примеры первой строки:
+#   worker: kill whole process group on timeout
+#   protocol: add length prefix for fetch reply
+#   tests: add script for 8 clients at once
+#
+# Ниже пустой строки (необязательно):
+# Зачем: <почему это изменение нужно>
+# Проверено: <какой командой / какими тестами 1–13 проверено>
+#
+# Строки, начинающиеся с #, в коммит не попадут.
