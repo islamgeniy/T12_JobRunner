@@ -1,8 +1,8 @@
 # SOC 3010 Operating Systems — Term Project
 
-**Команда (Team):** T<TEAM_NUMBER>
-**Курс:** SOC 3010 Operating Systems, Inha University in Tashkent, Fall 2026
-**Лидер команды (Team leader):** Islam
+- **Команда (Team):** T<12>
+- **Курс:** SOC 3010 Operating Systems, Inha University in Tashkent, Fall 2026
+- **Лидер команды (Team leader):** Islam
 
 ## Что мы делаем
 
