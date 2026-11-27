@@ -1,8 +1,25 @@
 # SOC 3010 Operating Systems — Term Project
 
-- **Команда (Team):** T<12>
+- **Команда (Team):** 12 (job ids `T12-1`, `T12-2`, …)
 - **Курс:** SOC 3010 Operating Systems, Inha University in Tashkent, Fall 2026
 - **Лидер команды (Team leader):** Islam
+
+## Summary (English)
+
+**Team 12** · **Team leader:** Islam · SOC 3010 Operating Systems, Fall 2026
+
+A small distributed **job runner** in C for Ubuntu Linux: `client` submits shell commands, `server` queues and schedules them and keeps a journal (`jobs.log`) so no accepted job is lost, and `worker` (on another machine) runs each job with `fork` + `exec("/bin/sh", "-c", cmd)`, enforces its timeout and reports its exit status. Job ids start with the team number: `T12-1`, `T12-2`, …
+
+| # | Component | Owner |
+|---|-----------|-------|
+| 1 | Protocol and client | Islam |
+| 2 | Scheduler and policy | Amir |
+| 3 | Worker and limits | Mirakbar |
+| 4 | Durability and recovery | Abdulloh |
+| 5 | Operations and report | Jamoliddin |
+| 6 | Testing and load | Bulat |
+
+Build: `make` in the repository root produces `./server`, `./worker`, `./client`. Usage and the full contract are below (in Russian) and in `docs/protocol.md`. AI use is disclosed in the section "Использование AI".
 
 ## Что мы делаем
 
@@ -14,7 +31,7 @@
 | `server` | Работает постоянно. Принимает клиентов, держит очередь задач, выбирает следующую задачу и отдаёт её свободному worker. Ведёт журнал `jobs.log`, поэтому после падения ни одна задача не теряется. |
 | `worker` | Работает на другой машине. Подключается к серверу, получает задачу, запускает её через `fork` + `exec("/bin/sh", "-c", cmd)`, собирает вывод, следит за таймаутом и сообщает результат. |
 
-Id задач начинаются с номера команды: `T<TEAM_NUMBER>-1`, `T<TEAM_NUMBER>-2`, …
+Id задач начинаются с номера команды: `T12-1`, `T12-2`, …
 
 ## Кто за что отвечает
 
@@ -134,7 +151,7 @@ make clean                                # удаляет их
 
 | Команда | Первая строка вывода | Код выхода |
 |---------|----------------------|------------|
-| `submit "<команда>" <таймаут> [приоритет]` | id задачи, например `T<TEAM_NUMBER>-7` | 0 |
+| `submit "<команда>" <таймаут> [приоритет]` | id задачи, например `T12-7` | 0 |
 | `status <id>` | `<id> QUEUED` · `RUNNING` · `DONE <код>` · `KILLED TIMEOUT` · `KILLED SIGNAL <n>` · `CANCELLED` | 0 |
 | `cancel <id>` | `<id> CANCELLED` или `<id> ALREADY FINISHED` | 0 · 1 |
 | `fetch <id>` | вывод задачи байт в байт (если не готова: `<id> NOT FINISHED` в stderr) | 0 · 1 |
@@ -144,7 +161,8 @@ make clean                                # удаляет их
 
 ## Файлы курса: `net.h` и `journal.h`
 
-- `src/net.h` и `src/journal.h` даны преподавателем и лежат **без изменений**.
+- `src/net.h` и `src/journal.h` даны преподавателем и лежат **без изменений**. Details 2 §8: `src/journal.h` должен быть именно данным файлом, без правок. Его берём с eClass (Details 2 §3).
+- `journal.h` не требует ничего, кроме `build-essential`. **Не добавляйте `-std=c99`** в флаги компилятора (Details 2 §3).
 - Сервер может использовать `server_listen` из `net.h`: в ней уже включён `SO_REUSEADDR`.
 - Клиент и все чтения и записи по сети используют функции из `src/protocol.c`. Причины (подробно в `docs/protocol.md` §6): `client_connect` при ошибке делает `exit(1)`, а контракт требует код 3; `read_line` принимает оборванную строку за целое сообщение.
 

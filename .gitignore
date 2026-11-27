@@ -4,3 +4,6 @@ client
 jobs.log
 out/
 *.o
+codes_from_eClass.zip
+codes_from_eClass/
+.DS_Store
