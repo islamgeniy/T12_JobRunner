@@ -1,4 +1,4 @@
-# Протокол (Protocol) — черновик v0.3
+# Протокол (Protocol) — черновик v0.4
 
 Владелец: **Islam** · ветка `protocol-client` · файлы `src/protocol.h`, `src/protocol.c`, `src/client.c`
 
@@ -64,7 +64,7 @@
 
 | Запрос | Возможные ответы |
 |--------|------------------|
-| `SUBMIT` | `OK T12-7` · `ERR bad timeout` · `ERR bad priority` · `ERR command too long` |
+| `SUBMIT` | `OK T12-7` · `ERR bad timeout` · `ERR bad priority` · `ERR command too long` · `ERR journal` (не удалось записать в `jobs.log`, задача не создана) |
 | `STATUS` | `OK T12-7 QUEUED` · `OK T12-7 RUNNING` · `OK T12-7 DONE 0` · `OK T12-7 KILLED TIMEOUT` · `OK T12-7 KILLED SIGNAL 9` · `OK T12-7 CANCELLED` · `UNKNOWN T12-7 UNKNOWN` |
 | `CANCEL` | `OK T12-7 CANCELLED` · `NO T12-7 ALREADY FINISHED` · `UNKNOWN T12-7 UNKNOWN` |
 | `FETCH` | `OK <nbytes>` + ровно `nbytes` байт вывода · `NO T12-7 NOT FINISHED` · `UNKNOWN T12-7 UNKNOWN` |
@@ -149,6 +149,24 @@ Server отвечает client **только после** `REPORT` от worker.
 
 Отмена задачи в `QUEUED`: server сразу меняет её состояние на `CANCELLED` и отвечает `OK T12-5 CANCELLED`, worker ничего не узнаёт.
 
+**Worker пропал, пока client ждёт `REPORT`.** Если соединение с worker закрылось (EOF или ошибка), а для его задачи висит отмена, server **сам** ставит задаче `CANCELLED` через `set_state()` и отвечает ожидающему client `OK T12-5 CANCELLED`. Без этого правила client ждал бы ответа вечно. Так же поступаем, если `REPORT` не пришёл за 5 секунд: отвечаем `OK T12-5 CANCELLED`, а поздний `REPORT` для уже финальной задачи server просто пропускает (вывод сохраняем, состояние не меняем).
+
+### 4.3 Part 2: журнал `jobs.log` (Details 2)
+
+Предложение, согласовать с Abdulloh (владелец durability). Формат строк — наш собственный, Details 2 §3 предлагает такие же два вида строк.
+
+| Строка журнала | Когда пишется | Пример |
+|----------------|---------------|--------|
+| `SUBMIT <id> <timeout> <priority> <command>` | `SUBMIT` от client, **до** ответа `OK <id>` | `SUBMIT T12-7 10 0 sort big.txt` |
+| `STATE <id> <state>` | любая смена состояния, **до** ответа client и **до** отправки `RUN` worker | `STATE T12-7 RUNNING`, `STATE T12-7 DONE 0` |
+
+Правила (Details 2 §2):
+1. **Сначала журнал, потом всё остальное.** `set_state()` = `journal_append` → изменить таблицу → ответить. Если `journal_append` вернул -1, состояние не меняем, client получает `ERR journal`.
+2. **Финальное состояние пишется после файла вывода.** При `REPORT` server сначала записывает вывод в `out/<id>`, потом пишет `STATE <id> <финальное состояние>`.
+3. **Команда — последнее поле**, как и в сети. `MAX_CMD = 3800` гарантирует, что строка влезет в 4095 байт (лимит `journal_append`).
+4. **Рестарт сервера по порядку:** `journal_read_open` → для каждой строки `apply()` (только меняет таблицу, в журнал **не** пишет; непонятную строку пропускает) → `journal_read_close` → все `RUNNING` становятся `QUEUED` → следующий id = максимальный номер из журнала + 1 → `journal_open` → только теперь `server_listen`.
+5. **Задача может выполниться дважды** (до падения и после). Для отчёта (Details 2 §5, раздел 4) пример команды, которую нельзя повторять: `echo x >> counter.txt` — после повтора строка окажется в файле два раза.
+
 ---
 
 ## 5. Код: `src/protocol.h`
@@ -205,7 +223,7 @@ int parse_long(const char *s, long min, long max, long *out);
 
 ## 7. Открытые вопросы (решаем вместе до 29 ноября)
 
-1. **Где хранится вывод задач.** Предлагаю: на server, в `out/<id>`. Тогда `FETCH` работает, даже если worker уже отключился, а Part 2 этого и требует (вывод записывается до того, как задача журналируется как завершённая).
+1. ~~**Где хранится вывод задач.**~~ **Решено (Details 2 §2):** на server, в `out/<id>`, файл пишется до строки `STATE <id> <финальное>` в журнале (§4.3). `FETCH` работает и после рестарта server, и после ухода worker.
 2. **Как server обслуживает много клиентов.** Решает Amir. Важно для протокола: при `fork` на каждого клиента таблица задач у дочерних процессов **не общая**, поэтому проще **threads + mutex** на таблицу задач.
 3. **Ждать ли подтверждения при `CANCEL`.** Предлагаю ждать `REPORT` (см. §4.2). Нужно, чтобы поток client на server умел ждать события от потока worker (например, через condition variable).
 4. **Приоритет для FIFO.** Поле `priority` передаётся всегда. Политика, которой оно не нужно, его просто игнорирует.
@@ -220,3 +238,4 @@ int parse_long(const char *s, long min, long max, long *out);
 | v0.1 | первый черновик: сообщения client ↔ server и worker ↔ server, framing, состояния |
 | v0.2 | §3.1: правила для долгого соединения server ↔ worker (mutex на запись, worker читает сокет, пока задачи работают) |
 | v0.3 | §5: `recv_line` читает по одному байту, `reader_t` удалён, добавлен `ignore_sigpipe()` через `sigaction`. §6: связь со Slide 10 и `net.h` (проверено на реальном файле). §7 п.5: завершение по SIGTERM |
+| v0.4 | §4.2: worker пропал или не прислал `REPORT` за 5 с, пока client ждёт отмену. §4.3: формат журнала `jobs.log` и порядок рестарта (Details 2). §2.2: `ERR journal`. §7 п.1 решён |
