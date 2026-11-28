@@ -7,3 +7,6 @@ out/
 codes_from_eClass.zip
 codes_from_eClass/
 .DS_Store
+
+push_comments.sh
+comments.patch
