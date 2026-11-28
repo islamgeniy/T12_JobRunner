@@ -15,6 +15,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+/* Sets SIGPIPE to "ignore", so a write to a closed socket fails with EPIPE
+ * and the caller decides what to do, instead of the process dying silently. */
 int ignore_sigpipe(void)
 {
     struct sigaction sa;
@@ -25,6 +27,8 @@ int ignore_sigpipe(void)
     return sigaction(SIGPIPE, &sa, NULL);   /* 0, or -1 on error */
 }
 
+/* Resolves host:port with getaddrinfo() and tries each address until one
+ * connects. Returns the connected socket, or -1 if none worked. Never exits. */
 int tcp_connect(const char *host, const char *port)
 {
     struct addrinfo hints, *res, *ai;
@@ -51,6 +55,8 @@ int tcp_connect(const char *host, const char *port)
     return fd;
 }
 
+/* Keeps calling write() until all n bytes are sent, because one write()
+ * may send only part of the buffer. Retries on EINTR, stops on real errors. */
 int send_all(int fd, const void *data, size_t n)
 {
     const char *p = data;
@@ -68,6 +74,8 @@ int send_all(int fd, const void *data, size_t n)
     return 0;
 }
 
+/* Formats one message like printf, checks that it fits and has no '\n'
+ * inside, adds the closing '\n' and sends it in full with send_all(). */
 int send_line(int fd, const char *fmt, ...)
 {
     char line[MAX_LINE];
@@ -87,6 +95,8 @@ int send_line(int fd, const char *fmt, ...)
     return send_all(fd, line, (size_t)len);
 }
 
+/* Reads one message byte by byte until '\n', so it never swallows the start
+ * of the next message. Strips '\n' (and a trailing '\r'), adds '\0'. */
 int recv_line(int fd, char *out, size_t size)
 {
     size_t n = 0;
@@ -117,6 +127,8 @@ int recv_line(int fd, char *out, size_t size)
     return 1;
 }
 
+/* Keeps calling read() until exactly n bytes arrive. Used for data whose
+ * length is known in advance, e.g. job output after "OK <nbytes>". */
 int recv_bytes(int fd, void *out, size_t n)
 {
     char *p = out;
@@ -136,6 +148,8 @@ int recv_bytes(int fd, void *out, size_t n)
     return 0;
 }
 
+/* Safe string-to-number: strtol() plus checks that the WHOLE string is a
+ * number, there was no overflow, and the value is within [min, max]. */
 int parse_long(const char *s, long min, long max, long *out)
 {
     char *end;
