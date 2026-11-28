@@ -16,7 +16,7 @@
 #include <string.h>
 #include <unistd.h>
 
-/* exit codes */
+/* Exit codes: tell a script what the answer was without parsing the text. */
 enum {
     EXIT_OK        = 0,   /* OK */
     EXIT_NO        = 1,   /* NO: already finished / not finished */
@@ -25,8 +25,10 @@ enum {
     EXIT_USAGE     = 4    /* bad arguments, or ERR from the server */
 };
 
+/* Server address from argv[1] and argv[2]; set once in main. */
 static const char *host, *port;
 
+/* Prints the correct way to run the program to stderr. */
 static void usage(void)
 {
     fprintf(stderr,
@@ -34,13 +36,16 @@ static void usage(void)
             "       client <host> <port> status|cancel|fetch <id>\n");
 }
 
+/* Prints a connection problem to stderr and returns exit code 3,
+ * so callers can write: return fail_connection("..."); */
 static int fail_connection(const char *what)
 {
     fprintf(stderr, "client: %s\n", what);
     return EXIT_NOCONNECT;
 }
 
-/* An id is one word: no spaces, no control characters, not too long. */
+/* Checks that an id is one word: 1..64 bytes, no spaces, no control
+ * characters. Returns 1 if valid, 0 if not. */
 static int valid_id(const char *id)
 {
     size_t n = strlen(id);
@@ -52,7 +57,10 @@ static int valid_id(const char *id)
     return 1;
 }
 
-/* Builds the request line in req. Returns 0, or -1 on bad arguments. */
+/* Checks the command-line arguments and turns them into one request line:
+ *   submit "cmd" 5 2  ->  "SUBMIT 5 2 cmd"
+ *   status T12-1      ->  "STATUS T12-1"   (same for cancel / fetch)
+ * Writes it into req. Returns 0, or -1 on bad arguments. */
 static int build_request(int argc, char **argv, char *req, size_t size)
 {
     const char *verb = argv[3];
@@ -95,7 +103,8 @@ static int build_request(int argc, char **argv, char *req, size_t size)
     return -1;                          /* unknown verb */
 }
 
-/* After "OK <nbytes>" to FETCH: copy exactly nbytes from the socket to stdout. */
+/* After "OK <nbytes>" to FETCH: copies exactly nbytes of job output from
+ * the socket to stdout in 64 KB chunks. Returns 0, or 3 on any problem. */
 static int copy_output(int fd, const char *nbytes_text)
 {
     char chunk[65536];
@@ -115,6 +124,8 @@ static int copy_output(int fd, const char *nbytes_text)
     return EXIT_OK;
 }
 
+/* Whole client: check args -> connect -> send one request -> read one
+ * reply -> print it -> exit with the code that matches the first word. */
 int main(int argc, char **argv)
 {
     char req[MAX_LINE], reply[MAX_LINE];
